@@ -186,20 +186,6 @@ teamwar:
     show-hours: false
 ```
 
-### Tin nhắn (`messages.yml`)
-
-Tất cả tin nhắn có thể tùy chỉnh trong `messages.yml`. Các đường dẫn tin nhắn chính:
-
-- `teamwar.prefix` - Tiền tố cho tất cả tin nhắn TeamWar
-- `teamwar.countdown.tick` - Tin nhắn đếm ngược
-- `teamwar.started` - Tin nhắn chiến tranh bắt đầu
-- `teamwar.ruleA.triggered` - Thông báo Quy tắc A
-- `teamwar.alive-command.*` - Tin nhắn lệnh alive
-- `teamwar.top-command.*` - Tin nhắn lệnh top
-- `teamwar.end.broadcast.*` - Tin nhắn thông báo kết thúc
-- `teamwar.end.private.*` - Tin nhắn kết thúc riêng tư
-- `teamwar.errors.*` - Tin nhắn lỗi
-
 ## PlaceholderAPI Placeholders
 
 ### Placeholder tổng đội
