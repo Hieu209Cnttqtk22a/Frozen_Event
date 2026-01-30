@@ -1,10 +1,10 @@
 # FrozenEvent Plugin
 
-Plugin Minecraft tổ chức sự kiện TeamWar - hệ thống thi đấu sinh tồn theo đội với cơ chế loại trừ tự động, border thu hẹp và bảo vệ arena. Hỗ trợ đầy đủ cả Paper và Folia với kiến trúc thread-safe.
+Plugin Minecraft tổ chức sự kiện TeamWar - hệ thống thi đấu sinh tồn theo đội với cơ chế loại trừ tự động, border thu hẹp và bảo vệ arena. Hỗ trợ đầy đủ cả Paper và Folia với kiến trúc thread-safe production-ready.
 
 ## Giới thiệu
 
-FrozenEvent là plugin tổ chức sự kiện PvP quy mô lớn cho server Minecraft. Plugin được thiết kế với kiến trúc **2 phạm vi độc lập** (Roster Source + Arena):
+FrozenEvent là plugin tổ chức sự kiện PvP quy mô lớn (500-2000+ players) cho server Minecraft. Plugin được thiết kế với kiến trúc **3 phạm vi độc lập** (Roster Source + Arena + Loser World):
 
 - **Roster Source (Lobby)**: Nơi chốt danh sách team tham gia - chỉ team có thành viên ở đây khi `/teamwar start` mới được đăng ký
 - **Arena World**: Nơi diễn ra chiến đấu - border thu hẹp theo giai đoạn, world guard bảo vệ nghiêm ngặt, player bị loại khi chết/thoát
@@ -13,30 +13,31 @@ FrozenEvent là plugin tổ chức sự kiện PvP quy mô lớn cho server Mine
 **Flow hoạt động:**
 1. Player tập trung ở **roster worlds** (lobby) để đăng ký
 2. Admin gõ `/teamwar start 60` → hệ thống chốt danh sách team có member ở lobby
-3. Đếm ngược 60 giây để player chuẩn bị
+3. Đếm ngược 60 giây để player chuẩn bị (warmup cache để đảm bảo snapshot chính xác)
 4. Player tự teleport vào **arena worlds** để chiến đấu
-5. Border thu hẹp theo nhiều giai đoạn với auto-teleport thông minh
+5. Border thu hẹp theo nhiều giai đoạn với auto-teleport thông minh (tier-based)
 6. Player chết/thoát arena → bị loại vĩnh viễn → teleport về **loser_world** và bị khóa
-7. Team cuối cùng còn người = chiến thắng, kết quả được lưu vào database
+7. Team cuối cùng còn người = chiến thắng, kết quả được lưu vào SQLite database với async writes
 
 ## Tính năng chính
 
 ### 🎮 Hệ thống TeamWar
 
-- **Kiến trúc 2 phạm vi độc lập**: Roster Source (lobby) và Arena (chiến trường) hoàn toàn tách biệt
+- **Kiến trúc 3 phạm vi độc lập**: Roster Source (lobby), Arena (chiến trường), và Loser World hoàn toàn tách biệt
 - **Đăng ký linh hoạt**: Hỗ trợ 3 chế độ roster source (LOBBY_WORLDS, SENDER_WORLD, FIXED_WORLDS)
 - **Arena đa dạng**: Cấu hình FIXED_WORLDS hoặc ALL_EXCEPT cho nhiều kịch bản
 - **Loại trừ nghiêm ngặt**: Player chết hoặc thoát arena = bị loại vĩnh viễn + khóa không cho quay lại
 - **Đếm ngược thông minh**: Warmup cache trước khi snapshot để đảm bảo dữ liệu chính xác
 - **Xử lý gián đoạn**: Tự động phát hiện và xử lý server restart giữa chừng event
+- **Multi-scope state management**: Hỗ trợ nhiều war đồng thời với ScopeKey isolation
 
 ### 📊 Theo dõi và xếp hạng
 
-- **Snapshot cache**: Hệ thống cache Folia-safe cho trạng thái player thời gian thực
-- **Debounce queue**: Tối ưu recompute eliminations tránh lag spike
-- **Database SQLite**: Lưu trữ top 10 team với thời gian sống sót và metadata đầy đủ
+- **Snapshot cache**: Hệ thống cache Folia-safe cho trạng thái player thời gian thực với warmup mechanism
+- **Debounce queue**: Tối ưu recompute eliminations tránh lag spike với configurable debounce ticks
+- **Database SQLite**: Lưu trữ top 10 team với thời gian sống sót và metadata đầy đủ (async writes, WAL mode)
 - **PlaceholderAPI**: 10+ placeholders cho scoreboard động (is_running, totalteam, top1-10, timestamps)
-- **Broadcast thông minh**: Chế độ global hoặc arena-only với Folia-safe delivery
+- **Broadcast thông minh**: Chế độ global hoặc arena-only với Folia-safe delivery và batching support
 
 ### 🛡️ World Guard - Bảo vệ Arena
 
@@ -46,6 +47,8 @@ FrozenEvent là plugin tổ chức sự kiện PvP quy mô lớn cho server Mine
 - **Loại trừ khi chết**: Hỗ trợ 2 chế độ - chỉ trong arena hoặc anywhere (chống exploit)
 - **Teleport lock**: Player bị loại bị khóa tại loser world, không thể quay lại arena
 - **Bypass permission**: Admin có thể bypass tất cả quy tắc guard
+- **Strict Entry Point**: Chỉ cho phép vào arena từ lobby (configurable)
+- **Death Anywhere Forfeit**: Chống exploit - chết ở bất kỳ đâu cũng bị loại
 
 ### 🌍 Border - Thu hẹp thông minh
 
@@ -54,7 +57,8 @@ FrozenEvent là plugin tổ chức sự kiện PvP quy mô lớn cho server Mine
 - **Auto-teleport tiers**: Hệ thống teleport phân tầng theo khoảng cách (0-5, 5-20, 20-100 blocks)
 - **Accumulate seconds**: Tích lũy thời gian qua các tier, chuyển đổi thông minh
 - **Reset on end**: Tự động reset border về initial radius với countdown announcement
-- **Folia-compatible**: Border service hoàn toàn thread-safe cho Folia
+- **Folia-compatible**: Border service hoàn toàn thread-safe cho Folia với per-world state tracking
+- **Configurable center**: Hỗ trợ SPAWN hoặc FIXED coordinate mode
 
 ### ⚙️ Đăng ký nghiêm ngặt (Strict Registration)
 
@@ -63,6 +67,7 @@ FrozenEvent là plugin tổ chức sự kiện PvP quy mô lớn cho server Mine
 - **Team blacklist**: Hỗ trợ blacklist theo team ID (UUID) hoặc team name
 - **Error messages**: Hiển thị danh sách player/team vi phạm với giới hạn tùy chỉnh
 - **World validation**: Kiểm tra tất cả worlds (roster, arena, loser) đã load trước khi start
+- **BetterTeams integration**: Reflection-based hook hỗ trợ nhiều phiên bản BetterTeams
 
 ### 🚪 Lobby Close - Đóng lobby tự động
 
@@ -71,6 +76,7 @@ FrozenEvent là plugin tổ chức sự kiện PvP quy mô lớn cho server Mine
 - **Grace period**: Thời gian chờ sau teleport thất bại trước khi xử thua
 - **Retry mechanism**: Thử lại teleport nhiều lần với interval cấu hình
 - **Warning system**: Cảnh báo player trước khi đóng lobby ở các mốc thời gian
+- **Auto-forfeit**: Player không vào arena sau grace period bị tự động loại
 
 ## Yêu cầu server
 
@@ -695,63 +701,86 @@ Nếu gặp vấn đề hoặc cần hỗ trợ:
 
 ## Tính năng nổi bật
 
-- ✅ **Thread-safe architecture**: Hỗ trợ đầy đủ Paper và Folia với SchedulerAdapter pattern
-- ✅ **Kiến trúc 2 phạm vi**: Roster Source và Arena hoàn toàn độc lập, linh hoạt cấu hình
-- ✅ **PlayerSnapshotCache**: Folia-safe player state access với warmup mechanism
-- ✅ **DebounceQueue**: Tối ưu recompute eliminations tránh lag spike
-- ✅ **World Guard nghiêm ngặt**: Initial sweep, teleport lock, death anywhere forfeit
-- ✅ **Border multi-phase**: Sequential schedule với auto-teleport tiers thông minh
-- ✅ **Lobby close system**: Tự động đóng lobby với retry mechanism và grace period
-- ✅ **Strict registration**: 3 cấp độ kiểm tra với eligibility rules và blacklist
-- ✅ **Database persistence**: SQLite lưu top 10 với metadata đầy đủ
-- ✅ **PlaceholderAPI**: 10+ placeholders cho scoreboard động
-- ✅ **Interrupted state handling**: Tự động xử lý server restart giữa chừng event
-- ✅ **Runtime command registration**: Hỗ trợ cả legacy và Paper Plugin API
-- ✅ **Broadcaster system**: Folia-safe message delivery với global/arena-only modes
-- ✅ **Performance optimized**: OptimizedTeamWarModule cho server 500-2000+ players
-- ✅ **Tùy chỉnh hoàn toàn**: Messages, time format, timezone, broadcast modes
+- ✅ **Thread-safe architecture**: Hỗ trợ đầy đủ Paper và Folia với SchedulerAdapter pattern và single-writer design
+- ✅ **Kiến trúc 3 phạm vi**: Roster Source, Arena, và Loser World hoàn toàn độc lập, linh hoạt cấu hình
+- ✅ **PlayerSnapshotCache**: Folia-safe player state access với warmup mechanism và world index optimization
+- ✅ **DebounceQueue**: Tối ưu recompute eliminations tránh lag spike với configurable debounce ticks
+- ✅ **World Guard nghiêm ngặt**: Initial sweep, teleport lock, death anywhere forfeit, strict entry point
+- ✅ **Border multi-phase**: Sequential schedule với auto-teleport tiers thông minh và accumulate seconds
+- ✅ **Lobby close system**: Tự động đóng lobby với retry mechanism, grace period, và auto-forfeit
+- ✅ **Strict registration**: 3 cấp độ kiểm tra với eligibility rules, blacklist, và world validation
+- ✅ **Database persistence**: SQLite với async writes, WAL mode, read cache, và connection pooling
+- ✅ **PlaceholderAPI**: 10+ placeholders cho scoreboard động với real-time updates
+- ✅ **Interrupted state handling**: Tự động xử lý server restart giữa chừng event với state recovery
+- ✅ **Runtime command registration**: Hỗ trợ cả legacy và Paper Plugin API với dynamic registration
+- ✅ **Broadcaster system**: Folia-safe message delivery với global/arena-only modes và batching
+- ✅ **Performance optimized**: OptimizedTeamWarModule cho server 500-2000+ players với batched operations
+- ✅ **Tùy chỉnh hoàn toàn**: Messages, time format, timezone, broadcast modes, và performance tuning
+- ✅ **BetterTeams integration**: Reflection-based hook hỗ trợ BetterTeams 4.x, 5.x, 6.x
 
 ## Kiến trúc kỹ thuật
 
 ### Core Components
 
-**TeamWarService**: Service chính quản lý state machine của TeamWar
+**TeamWarService** (1798 lines): Service chính quản lý state machine của TeamWar
 - Multi-scope state management (ScopeKey: all hoặc specific world)
 - Phase transitions: IDLE → COUNTDOWN → RUNNING → IDLE
 - Snapshot creation với warmup cache mechanism
 - Recompute eliminations với debounce queue
 - Auto-end logic và force-end handling
+- Integration với BorderService, WorldGuardService, LobbyCloseService
 
 **SchedulerAdapter**: Abstraction layer cho Paper/Folia scheduling
 - `PaperSchedulerAdapter`: Standard Bukkit scheduler
 - `FoliaSchedulerAdapter`: Region-based scheduling cho Folia
 - Single-writer pattern đảm bảo thread-safety
 - `runNow()`, `runLater()`, `runRepeating()` APIs
+- Entity-specific task scheduling cho Folia regions
 
 **PlayerSnapshotCache**: Folia-safe player state cache
 - Cache world name, gamemode, online status của players
-- Warmup mechanism trước khi snapshot
+- Warmup mechanism trước khi snapshot (configurable delay)
 - Tự động update qua event listeners
 - Thread-safe access cho Folia regions
+- World index optimization cho fast lookups
 
-**BorderService**: Quản lý world border shrinking
-- Multi-phase sequential schedule
+**BorderService** (578 lines): Quản lý world border shrinking
+- Multi-phase sequential schedule với configurable delays
 - Per-world border state tracking
-- Auto-teleport với tier system
-- Reset mechanism với countdown
+- Auto-teleport với tier system (distance-based delays)
+- Accumulate seconds mechanism cho smooth transitions
+- Reset mechanism với countdown announcements
+- Folia-compatible với region-aware scheduling
 
 **TeamWarWorldGuardService**: Bảo vệ arena và xử lý forfeit
-- Initial sweep: eject non-roster players
-- Outsider enter: block và eject
+- Initial sweep: eject non-roster players khi war start
+- Outsider enter: block và eject về loser world
 - Participant leave: forfeit + teleport + lock
-- Death handling: forfeit + respawn/teleport
+- Death handling: forfeit + respawn/teleport loser world
 - Teleport lock: prevent eliminated players từ quay lại
+- Strict entry point: chỉ cho phép vào từ lobby
+- Death anywhere forfeit: anti-exploit mechanism
 
 **LobbyCloseService**: Tự động đóng lobby sau khi war start
-- Countdown với warning announcements
+- Countdown với warning announcements ở các mốc thời gian
 - Teleport command execution (CONSOLE/PLAYER mode)
-- Retry mechanism với configurable interval
+- Retry mechanism với configurable interval và max retries
 - Grace period trước khi forfeit
+- Integration với WorldGuardService cho auto-elimination
+
+**BetterTeamsHook**: Integration với BetterTeams plugin
+- `ReflectionBetterTeamsHook`: Reflection-based implementation hỗ trợ nhiều versions
+- Team lookup by UUID và player
+- Member listing với online status
+- Compatibility với BetterTeams 4.x, 5.x, 6.x
+
+**TeamWarModule vs OptimizedTeamWarModule**:
+- `TeamWarModule`: Standard implementation cho server < 500 players
+- `OptimizedTeamWarModule`: Performance-optimized cho 500-2000+ players
+  - Batched broadcasts với configurable batch size
+  - Optimized cache với TTL và max size
+  - Async database operations với connection pooling
+  - Partial recompute với threshold-based triggering
 
 ### Design Patterns
 
@@ -762,3 +791,13 @@ Nếu gặp vấn đề hoặc cần hỗ trợ:
 - **Debouncing**: DebounceQueue tối ưu recompute operations
 - **Cache Pattern**: PlayerSnapshotCache với warmup
 - **Repository Pattern**: TeamWarLastResultStore cho persistence
+- **Single-Writer Pattern**: Tất cả state mutations qua SchedulerAdapter.runNow()
+
+### Thread Safety & Folia Compatibility
+
+Plugin tự động detect Folia runtime và adapt:
+- `FoliaSchedulerAdapter`: Region-based scheduling
+- `PlayerSnapshotCache`: Thread-safe player access với concurrent collections
+- `Broadcaster`: Region-aware message delivery
+- Tất cả state mutations qua `SchedulerAdapter.runNow()` đảm bảo single-writer
+- Entity-specific tasks cho player operations trong Folia regions
